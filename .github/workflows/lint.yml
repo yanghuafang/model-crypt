@@ -1,0 +1,57 @@
+name: Lint
+
+# Style and static analysis. Three independent checks so each reports on its
+# own: a formatting slip should not wait on clang-tidy, which has to configure
+# and compile the project before it can say anything.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lint-${{ github.ref }}
+  # An obsolete run on a PR branch is waste. On main it is the only evidence the
+  # commit was checked, so let it finish.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  clang-format:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      # Pinned to the major ubuntu-24.04 ships. Unpinned, a clang-format release
+      # reformats the tree and CI starts disagreeing with the copy in every
+      # developer's editor. build-env.sh honours this, so the same pin works on
+      # a workstation.
+      MODEL_CRYPT_CLANG_FORMAT: clang-format-18
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: scripts/install-deps.sh
+      - run: scripts/format.sh --check
+
+  clang-tidy:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      # Pinned for the same reason as clang-format, with more at stake: a
+      # clang-tidy major changes which checks exist and which fire, so an
+      # unpinned analyser means ./tidy.sh on a workstation and this job reach
+      # different verdicts on identical source.
+      MODEL_CRYPT_CLANG_TIDY: clang-tidy-18
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: scripts/install-deps.sh
+
+      # clang-tidy reads the compile database this build writes. Debug, because
+      # that is the preset a developer runs tidy against: the checks do not
+      # depend on the optimization level but the database's flags do, and a
+      # finding that appears in only one configuration is one nobody can
+      # reproduce.
+      - run: cmake --preset dev-debug
+      - run: cmake --build --preset dev-debug
+      - run: scripts/tidy.sh --preset dev-debug

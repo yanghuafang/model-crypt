@@ -1,0 +1,90 @@
+name: Build
+
+# Does it build and pass on every supported platform, in both configurations.
+#
+# One check per platform rather than one per configuration: the check list stays
+# the same shape as the support matrix, and reads that way on a pull request.
+#
+# Every command is `cmake --preset` / `ctest --preset`. What each configuration
+# is lives in CMakePresets.json, so a failure reproduces locally with the
+# command from its own log group. No compiler flag, sanitizer option or build
+# type appears in this file.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  # ctest runs serially unless told otherwise, and a preset's execution.jobs
+  # takes a literal integer. Presets that pin jobs themselves -- the sanitizers,
+  # to bound shadow-memory use -- still win over this.
+  CTEST_PARALLEL_LEVEL: 4
+
+jobs:
+  build:
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      # Report both platforms even when one fails: a macOS failure hiding
+      # whether Linux was also broken is the first thing anyone wants to know.
+      fail-fast: false
+      matrix:
+        include:
+          # clang in both configurations on both platforms, all under -Werror.
+          # The warning set is calibrated against clang, and NDEBUG plus the
+          # optimizer's flow-sensitive diagnostics make Release and Debug warn
+          # about genuinely different things.
+          #
+          # gcc-release is the other major toolchain -- the one a distro package
+          # build uses -- and runs without -Werror, so a new GCC diagnostic does
+          # not turn every branch red before anyone has looked. There is no
+          # gcc-debug: the Release/Debug pairing exists to keep both halves under
+          # -Werror, which never applied to gcc.
+          - os: ubuntu-24.04
+            label: Ubuntu
+            presets: clang-release clang-debug gcc-release
+          - os: macos-15
+            label: macOS
+            presets: clang-release clang-debug
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # Nothing here runs clang-format or clang-tidy: linting is its own
+      # workflow, on one platform, so there is one authority. On macOS that
+      # skips a multi-gigabyte Homebrew formula.
+      - run: scripts/install-deps.sh --no-style-tools
+
+      # Each preset in its own collapsible log group. rc accumulates rather than
+      # aborting, so one failing configuration does not hide the state of the
+      # others -- the property fail-fast: false gave the old per-preset matrix.
+      - name: Build and test each preset
+        run: |
+          rc=0
+          for preset in ${{ matrix.presets }}; do
+            echo "::group::${preset}"
+            (
+              set -e
+              cmake --preset "${preset}"
+              cmake --build --preset "${preset}"
+              ctest --preset "${preset}"
+            ) || rc=1
+            echo "::endgroup::"
+          done
+          exit "${rc}"
+
+      # The only check that the *installed* interface works: everything above
+      # links out of the build tree, where include/ is on the include path
+      # anyway. This is what catches the public header depending on something
+      # under src/. It configures its own throwaway trees and does not care
+      # which preset built this one, so it runs once per platform.
+      - run: scripts/check-install.sh

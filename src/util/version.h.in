@@ -1,0 +1,17 @@
+#ifndef MODEL_CRYPT_SRC_UTIL_VERSION_H_
+#define MODEL_CRYPT_SRC_UTIL_VERSION_H_
+
+/// \file version.h
+/// Generated from src/util/version.h.in by CMake. Do not edit.
+///
+/// The version lives in the top-level CMakeLists.txt `project(... VERSION ...)`
+/// and reaches C++ through here, so there is one place to bump it. A second
+/// copy in a header is the copy that gets forgotten, and then
+/// mc_version_string() reports something no release ever had.
+
+#define MODEL_CRYPT_VERSION_MAJOR @model_crypt_VERSION_MAJOR@
+#define MODEL_CRYPT_VERSION_MINOR @model_crypt_VERSION_MINOR@
+#define MODEL_CRYPT_VERSION_PATCH @model_crypt_VERSION_PATCH@
+#define MODEL_CRYPT_VERSION_STRING "@model_crypt_VERSION@"
+
+#endif  // MODEL_CRYPT_SRC_UTIL_VERSION_H_

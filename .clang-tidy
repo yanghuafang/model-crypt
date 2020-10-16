@@ -1,0 +1,266 @@
+# clang-tidy configuration for model-crypt. Run with scripts/tidy.sh.
+#
+# The check list is curated rather than "all of readability-* and modernize-*".
+# Each disabled family is listed with the reason it is off, so the exclusions
+# can be re-argued rather than rediscovered.
+#
+# Unlike a pure style configuration, the bugprone- and clang-analyzer- families
+# ARE enabled here. This is a cryptographic library: a use-after-free on a key
+# buffer or a sizeof-on-pointer in a length computation is the whole risk
+# surface, and these checks are the cheapest place to catch one. They cost a
+# slower tidy run, which is why they run on a single CI platform.
+#
+# == The half of the style guide that is not in this file ==
+#
+# Layout is clang-format's, not clang-tidy's, and there is no check here that
+# can substitute for it. Brace placement (Google attaches `{` to the line
+# opening the block), pointer spelling (`uint8_t* p`, not `uint8_t *p`), indent
+# width, column limit and include order are all settings in .clang-format, and a
+# rule missing from that file is unenforced no matter what is added below. Two of
+# them are stated explicitly there rather than inherited from `BasedOnStyle:
+# Google`, because the upstream defaults moved; the comments there say which and
+# why.
+#
+# What is left for this file is the half clang-format cannot see: what things are
+# named, and which constructs the guide rules out.
+#
+# Deliberately NOT enabled:
+#
+#   modernize-use-trailing-return-type
+#       Would rewrite every signature into `auto f() -> mc_status`. The status
+#       code is the part of these APIs a reader is scanning for; burying it
+#       after the parameter list makes the error contract harder to skim.
+#   readability-identifier-length
+#       Flags `n`, `r`, `p`, `iv`, `ct`, `pt`. Those are the names the scrypt
+#       and AEAD literature uses, and renaming them to `iterationCount` or
+#       `cipherText` makes the code harder to check against the spec, not
+#       easier.
+#   readability-magic-numbers
+#       Nearly every hit is a fixed cryptographic width — 12 (GCM nonce), 16
+#       (GCM tag), 32 (AES-256 key), 64 (header size). Each already sits behind
+#       a named constant in crypt/format.h where it is used more than once;
+#       the remaining literals are clearer than a second alias would be.
+#   readability-function-cognitive-complexity
+#       Fires on ParseArgs in cli/main.cc and EncryptBuffer in crypt/encrypt.cc,
+#       which are long because they are a flat sequence of validation steps, and
+#       on most TEST bodies, which are a flat sequence of assertions. Splitting
+#       either to satisfy a threshold would scatter checks that must be read
+#       together to confirm nothing is missing.
+#   readability-braces-around-statements
+#       Would add braces to nine single-statement `if`s in cli/main.cc. The
+#       Google guide permits precisely that shape -- the braces may be omitted
+#       when the statement then fits on one line, or on two -- so the check is
+#       stricter than the style it would be here to enforce.
+#   bugprone-easily-swappable-parameters
+#       Fires on every (const uint8_t* in, size_t in_size, uint8_t* out, size_t
+#       out_size) signature, which is the shape a buffer API has.
+#   cppcoreguidelines-pro-bounds-pointer-arithmetic
+#       The chunk walk in crypt/decrypt.cc is pointer arithmetic over a byte
+#       range by nature. Every step is bounds-checked against the remaining
+#       length first; the check cannot see that and would report all of them.
+#   cppcoreguidelines-avoid-magic-numbers
+#       Duplicate of readability-magic-numbers, above.
+#   modernize-use-nodiscard
+#       [[nodiscard]] is applied by hand on the public C API in
+#       include/model_crypt/model_crypt.h, which is where dropping a status
+#       code actually costs something. Annotating the internal accessors too
+#       would be ~40 lines buying nothing.
+#   google-readability-todo
+#       Demands a name or bug id in every TODO. The tree has none, so the check
+#       would only ever act through `tidy.sh --fix`, whose fix-it inserts the
+#       local username of whoever happened to run it into the source.
+
+Checks: >
+  -*,
+  bugprone-*,
+  clang-analyzer-*,
+  cert-err34-c,
+  cppcoreguidelines-init-variables,
+  cppcoreguidelines-virtual-class-destructor,
+  google-build-namespaces,
+  google-build-using-namespace,
+  google-default-arguments,
+  google-explicit-constructor,
+  google-global-names-in-headers,
+  google-readability-casting,
+  google-readability-namespace-comments,
+  google-runtime-int,
+  misc-definitions-in-headers,
+  misc-unused-parameters,
+  modernize-deprecated-headers,
+  modernize-use-auto,
+  modernize-use-bool-literals,
+  modernize-use-default-member-init,
+  modernize-use-equals-default,
+  modernize-use-nullptr,
+  modernize-use-override,
+  modernize-use-using,
+  performance-avoid-endl,
+  performance-inefficient-vector-operation,
+  performance-move-const-arg,
+  performance-unnecessary-value-param,
+  readability-avoid-const-params-in-decls,
+  readability-const-return-type,
+  readability-container-size-empty,
+  readability-convert-member-functions-to-static,
+  readability-else-after-return,
+  readability-identifier-naming,
+  readability-implicit-bool-conversion,
+  readability-inconsistent-declaration-parameter-name,
+  readability-make-member-function-const,
+  readability-math-missing-parentheses,
+  readability-named-parameter,
+  readability-non-const-parameter,
+  readability-qualified-auto,
+  readability-redundant-control-flow,
+  readability-redundant-declaration,
+  readability-redundant-member-init,
+  readability-redundant-string-cstr,
+  readability-simplify-boolean-expr,
+  readability-static-definition-in-anonymous-namespace,
+  -bugprone-easily-swappable-parameters,
+  -readability-braces-around-statements,
+  -readability-identifier-length,
+  -readability-magic-numbers,
+  -readability-function-cognitive-complexity
+
+# The internal headers under src/ and tests/, and not the installed C API.
+#
+# include/model_crypt/model_crypt.h is deliberately outside this filter. It is a
+# C header whose identifiers are mc_snake_case because that is what a C API
+# looks like, and readability-identifier-naming below would report every one of
+# them -- correctly, by C++ rules, and uselessly, because renaming mc_status
+# would break every consumer that has ever linked this library. Excluding it
+# costs almost nothing else: it declares functions and defines macros, and has
+# no function bodies for the bugprone- and clang-analyzer- families to walk.
+#
+# That exclusion also covers the mc_* definitions in src/api/c_api.cc, which are
+# in a .cc and so not filtered at all. A naming diagnostic is reported at the
+# identifier's canonical declaration, and for every one of those the canonical
+# declaration is the excluded public header. A *new* snake_case function
+# introduced in c_api.cc and declared nowhere else would still be reported,
+# which is the wanted behaviour.
+#
+# tests/ is included: check.h and corpus.h are real headers with real contents
+# -- a macro suite and a corpus generator -- and leaving them out meant the only
+# hand-written macros in the tree were the ones nothing checked.
+HeaderFilterRegex: '(src|tests)/.*\.h$'
+
+WarningsAsErrors: ''
+FormatStyle: file
+
+# modernize-use-default-member-init writes `T* p{nullptr}` by default. Every
+# member initializer already in this tree uses assignment, so pin the option
+# rather than let the check introduce a second spelling.
+CheckOptions:
+  modernize-use-default-member-init.UseAssignment: true
+
+  # bugprone-signed-bitwise is about signed *operands* -- `-1 & x`, a negative
+  # value shifted -- not about the type an untyped literal happens to have. A
+  # plain `30`, `0x01` or `0777` is an int, so every `1ull << 30`, every mask and
+  # every `& 0xFF` in this tree matches the check by construction while the value
+  # being manipulated is unsigned throughout.
+  #
+  # Left at the default, LLVM 23's clang-tidy reports 70 findings here and
+  # LLVM 18's reports none: the same source, two verdicts, purely from which
+  # clang-tidy a developer happens to have. Setting this makes the check mean the
+  # same thing on both, which is the point of the pin in lint.yml, and it still
+  # catches a genuinely signed variable used with a bitwise operator.
+  bugprone-signed-bitwise.IgnorePositiveIntegerLiterals: true
+
+  # == The Google naming rules, spelled out so they are checked rather than
+  # remembered ==
+  #
+  # Without this the convention survives only as long as everyone touching the
+  # tree happens to know it.
+  #
+  # The list is shorter than the set of options the check offers, because the
+  # check resolves an identifier from most specific kind to least and falls back
+  # when the specific kind is unset. That fallback is load-bearing here and is
+  # why several plausible-looking options are absent:
+  #
+  #   ConstantParameter, PointerParameter, ConstantPointerParameter
+  #       fall back to Parameter. `const uint8_t* key` is the dominant
+  #       parameter shape in this tree and is covered by the one entry.
+  #   ClassMember, GlobalVariable, GlobalPointer, StaticVariable
+  #       fall back to Variable.
+  #   ConstantMember
+  #       falls back to PublicMember / PrivateMember.
+  #   GlobalConstantPointer
+  #       falls back to GlobalConstant, keeping the k prefix.
+  #   ScopedEnumConstant
+  #       falls back to EnumConstant, so `enum class Profile { kZeros, ... }` in
+  #       tests/corpus.h is checked by the entry below.
+  #   AbstractClass
+  #       falls back to Class / Struct.
+  #
+  # Adding them would restate the same case for a second time and leave two
+  # places to change when a rule moves.
+  readability-identifier-naming.NamespaceCase: lower_case
+  readability-identifier-naming.InlineNamespaceCase: lower_case
+  readability-identifier-naming.ClassCase: CamelCase
+  readability-identifier-naming.StructCase: CamelCase
+  readability-identifier-naming.UnionCase: CamelCase
+  readability-identifier-naming.EnumCase: CamelCase
+  readability-identifier-naming.EnumConstantCase: CamelCase
+  readability-identifier-naming.EnumConstantPrefix: k
+  readability-identifier-naming.TypeAliasCase: CamelCase
+  readability-identifier-naming.TypedefCase: CamelCase
+  readability-identifier-naming.TypeTemplateParameterCase: CamelCase
+  readability-identifier-naming.ValueTemplateParameterCase: CamelCase
+  readability-identifier-naming.TemplateTemplateParameterCase: CamelCase
+  readability-identifier-naming.VariableCase: lower_case
+  readability-identifier-naming.ParameterCase: lower_case
+  readability-identifier-naming.LocalVariableCase: lower_case
+  readability-identifier-naming.LocalConstantCase: lower_case
+  readability-identifier-naming.LocalPointerCase: lower_case
+  readability-identifier-naming.LocalConstantPointerCase: lower_case
+  readability-identifier-naming.PublicMemberCase: lower_case
+  readability-identifier-naming.PrivateMemberCase: lower_case
+  readability-identifier-naming.PrivateMemberSuffix: _
+  readability-identifier-naming.ProtectedMemberCase: lower_case
+  readability-identifier-naming.ProtectedMemberSuffix: _
+  readability-identifier-naming.GlobalConstantCase: CamelCase
+  readability-identifier-naming.GlobalConstantPrefix: k
+  readability-identifier-naming.StaticConstantCase: CamelCase
+  readability-identifier-naming.StaticConstantPrefix: k
+  readability-identifier-naming.ClassConstantCase: CamelCase
+  readability-identifier-naming.ClassConstantPrefix: k
+  readability-identifier-naming.ConstexprVariableCase: CamelCase
+  readability-identifier-naming.ConstexprVariablePrefix: k
+
+  # Functions and methods are PascalCase, with one exception the guide grants
+  # explicitly: "accessors and mutators may be named like variables".
+  # SecureBuffer::data(), size() and empty(), and the same three on the CLI's
+  # key holder, take it so those types read like the containers they are.
+  #
+  # MethodIgnoredRegexp is what makes the rule expressible instead of a choice
+  # between renaming those and scattering NOLINTs: the case still applies to
+  # every other method, and only these three names are exempt. Anchored, so a
+  # method merely containing "size" is not let through.
+  #
+  # Free functions have no such exemption. `main` is special-cased by the check
+  # itself, and the TEST macro's generated `Suite_Case` functions are not
+  # reported because the check does not rename identifiers built by token
+  # pasting.
+  readability-identifier-naming.FunctionCase: CamelCase
+  readability-identifier-naming.MethodCase: CamelCase
+  readability-identifier-naming.MethodIgnoredRegexp: '^(data|size|empty)$'
+
+  # Macros are UPPER_CASE, except the include guards.
+  #
+  # The guide's guard convention -- MODEL_CRYPT_SRC_CRYPT_AEAD_H_, ending in an
+  # underscore -- is not UPPER_CASE by this check's definition, which rejects a
+  # trailing separator. Without the exemption every header in the tree reports
+  # its own guard. The pattern is the full guard shape rather than a bare `_H_$`
+  # so it cannot quietly excuse an unrelated macro.
+  readability-identifier-naming.MacroDefinitionCase: UPPER_CASE
+  readability-identifier-naming.MacroDefinitionIgnoredRegexp: '^MODEL_CRYPT_[A-Z0-9_]+_H_$'
+
+  # Every finding this check produced was inside the CHECK() macro in
+  # tests/check.h, which expands `CHECK(a || b)` to `if (!(a || b))`. The
+  # simplification it proposes -- rewriting the assertion as
+  # `CHECK(!(rc != A && rc != B))` -- makes the test harder to read to satisfy a
+  # transformation of code nobody wrote. The check still applies to hand-written
+  # conditions, which is where it earns its place.
+  readability-simplify-boolean-expr.IgnoreMacros: true

@@ -1,0 +1,326 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 22,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "binaryDir": "${sourceDir}/../model-crypt-build/${presetName}",
+      "cacheVariables": {
+        "MODEL_CRYPT_BUILD_TESTS": "ON",
+        "MODEL_CRYPT_WERROR": "OFF"
+      }
+    },
+    {
+      "name": "release",
+      "hidden": true,
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "debug",
+      "hidden": true,
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "clang",
+      "hidden": true,
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_CXX_COMPILER": "clang++"
+      }
+    },
+    {
+      "name": "dev",
+      "displayName": "Release, host compiler",
+      "description": "The everyday build. Host default compiler, warnings on but not fatal.",
+      "inherits": "release"
+    },
+    {
+      "name": "dev-debug",
+      "displayName": "Debug, host compiler",
+      "description": "Debug build. Also the compile database clang-tidy reads: tidy findings must be reproducible, and the database's flags depend on the configuration.",
+      "inherits": "debug"
+    },
+    {
+      "name": "clang-release",
+      "displayName": "clang Release -Werror",
+      "description": "CI gate. -Werror is calibrated against clang's warning set, so a new clang diagnostic is a change we want to see.",
+      "inherits": [
+        "clang",
+        "release"
+      ],
+      "cacheVariables": {
+        "MODEL_CRYPT_WERROR": "ON"
+      }
+    },
+    {
+      "name": "clang-debug",
+      "displayName": "clang Debug -Werror",
+      "description": "CI gate. Paired with clang-release because NDEBUG changes which variables are used and the optimizer's flow-sensitive diagnostics need -O2.",
+      "inherits": [
+        "clang",
+        "debug"
+      ],
+      "cacheVariables": {
+        "MODEL_CRYPT_WERROR": "ON"
+      }
+    },
+    {
+      "name": "gcc-release",
+      "displayName": "gcc Release (no -Werror)",
+      "description": "Proves the library compiles and passes with the other major toolchain, the one a distro package build uses. -Werror stays off: GCC's -Wconversion and -Wold-style-cast fire on different things than clang's.",
+      "inherits": "release",
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "gcc",
+        "CMAKE_CXX_COMPILER": "g++"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      }
+    },
+    {
+      "name": "gcc-debug",
+      "displayName": "gcc Debug (no -Werror)",
+      "description": "See gcc-release. Debug half of the same pair.",
+      "inherits": "gcc-release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "asan-ubsan",
+      "description": "Debug, not Release: at -O3 the compiler inlines away the frames a sanitizer report is made of. ASan and UBSan share one build because they compose; TSan cannot join them.",
+      "inherits": [
+        "clang",
+        "debug"
+      ],
+      "cacheVariables": {
+        "MODEL_CRYPT_ASAN": "ON",
+        "MODEL_CRYPT_UBSAN": "ON"
+      }
+    },
+    {
+      "name": "tsan",
+      "displayName": "ThreadSanitizer",
+      "description": "Its own configuration because TSan and ASan use incompatible shadow memory layouts. Verifies the documented promise that the API is reentrant.",
+      "inherits": [
+        "clang",
+        "debug"
+      ],
+      "cacheVariables": {
+        "MODEL_CRYPT_TSAN": "ON"
+      }
+    },
+    {
+      "name": "coverage",
+      "description": "Source-based coverage. Debug, because an optimized build attributes an inlined line to its call site and reports coverage for source that was never separately compiled.",
+      "inherits": [
+        "clang",
+        "debug"
+      ],
+      "cacheVariables": {
+        "MODEL_CRYPT_COVERAGE": "ON"
+      }
+    },
+    {
+      "name": "valgrind",
+      "displayName": "Valgrind (uninstrumented Debug)",
+      "description": "Deliberately uninstrumented: Valgrind and the sanitizers both replace the allocator and the combination reports nonsense. Its own binaryDir is what keeps the two builds from sharing objects. Linux only; Valgrind does not run on Apple Silicon.",
+      "inherits": "debug",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "dev",
+      "configurePreset": "dev"
+    },
+    {
+      "name": "dev-debug",
+      "configurePreset": "dev-debug"
+    },
+    {
+      "name": "clang-release",
+      "configurePreset": "clang-release"
+    },
+    {
+      "name": "clang-debug",
+      "configurePreset": "clang-debug"
+    },
+    {
+      "name": "gcc-release",
+      "configurePreset": "gcc-release",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      }
+    },
+    {
+      "name": "gcc-debug",
+      "configurePreset": "gcc-debug",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      }
+    },
+    {
+      "name": "asan-ubsan",
+      "configurePreset": "asan-ubsan"
+    },
+    {
+      "name": "tsan",
+      "configurePreset": "tsan"
+    },
+    {
+      "name": "coverage",
+      "configurePreset": "coverage"
+    },
+    {
+      "name": "valgrind",
+      "configurePreset": "valgrind",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      }
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "common",
+      "hidden": true,
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
+    },
+    {
+      "name": "sanitizer-common",
+      "hidden": true,
+      "inherits": "common",
+      "description": "Serial regardless of core count: ASan and TSan each reserve a large shadow mapping per process, and eight at once on a CI runner is an OOM kill that looks like a test failure.",
+      "execution": {
+        "jobs": 1
+      }
+    },
+    {
+      "name": "dev",
+      "configurePreset": "dev",
+      "inherits": "common"
+    },
+    {
+      "name": "dev-debug",
+      "configurePreset": "dev-debug",
+      "inherits": "common"
+    },
+    {
+      "name": "clang-release",
+      "configurePreset": "clang-release",
+      "inherits": "common"
+    },
+    {
+      "name": "clang-debug",
+      "configurePreset": "clang-debug",
+      "inherits": "common"
+    },
+    {
+      "name": "gcc-release",
+      "configurePreset": "gcc-release",
+      "inherits": "common",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      }
+    },
+    {
+      "name": "gcc-debug",
+      "configurePreset": "gcc-debug",
+      "inherits": "common",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      }
+    },
+    {
+      "name": "asan-base",
+      "hidden": true,
+      "inherits": "sanitizer-common",
+      "configurePreset": "asan-ubsan",
+      "description": "Shared by the two asan test presets, which differ only in whether LeakSanitizer is asked for. UBSan aborts on the first finding either way -- the build passes -fno-sanitize-recover=all -- and a report is only actionable with a stack trace.",
+      "environment": {
+        "UBSAN_OPTIONS": "print_stacktrace=1:halt_on_error=1"
+      }
+    },
+    {
+      "name": "asan-ubsan",
+      "inherits": "asan-base",
+      "description": "Linux. LeakSanitizer rides along with ASan here and nowhere else, which makes this the only place a leak is caught -- and for a decrypted model, a missed free means plaintext left in the heap. Set explicitly rather than left to the runtime default, because it is load-bearing.",
+      "environment": {
+        "ASAN_OPTIONS": "detect_leaks=1:abort_on_error=1"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      }
+    },
+    {
+      "name": "asan-ubsan-macos",
+      "inherits": "asan-base",
+      "description": "The same build without detect_leaks: LeakSanitizer is not supported on macOS, and asking for it aborts every test at startup with a message about the platform rather than about the test. Leaks are checked on Linux only, by asan-ubsan.",
+      "environment": {
+        "ASAN_OPTIONS": "abort_on_error=1"
+      },
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Darwin"
+      }
+    },
+    {
+      "name": "tsan",
+      "configurePreset": "tsan",
+      "inherits": "sanitizer-common",
+      "environment": {
+        "TSAN_OPTIONS": "halt_on_error=1"
+      }
+    },
+    {
+      "name": "coverage",
+      "configurePreset": "coverage",
+      "inherits": "common"
+    },
+    {
+      "name": "valgrind",
+      "configurePreset": "valgrind",
+      "inherits": "common",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Linux"
+      }
+    }
+  ]
+}

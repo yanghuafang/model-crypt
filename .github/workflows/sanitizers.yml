@@ -1,0 +1,55 @@
+name: Sanitizers
+
+# The runtime checks. Slower than Build, and split from it so a plain compile
+# error reports in minutes instead of behind a sanitizer run.
+#
+# Two checks because the two cannot share a binary: ASan and TSan use
+# incompatible shadow memory layouts, which CMakeLists rejects outright rather
+# than leaving to the linker.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sanitizers-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  sanitizers:
+    name: ${{ matrix.label }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Where a buffer overflow in the chunk walk, a use-after-free on a key
+          # or a shift past a type's width would surface -- and the only place a
+          # leak is caught anywhere in CI, since LeakSanitizer is Linux-only and
+          # a macOS build cannot check it.
+          - preset: asan-ubsan
+            label: ASan + UBSan
+          # Checks a documented promise rather than internal state: the API is
+          # reentrant, and nothing holds a lock or mutable global state.
+          - preset: tsan
+            label: TSan
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: scripts/install-deps.sh --no-style-tools
+
+      # Ubuntu 24.04 raised vm.mmap_rnd_bits beyond what some sanitizer runtimes
+      # can map, and they abort at startup with an allocator error that says
+      # nothing about the test. Harmless where the runtime already copes.
+      - run: sudo sysctl -w vm.mmap_rnd_bits=28
+
+      # Sanitizer options live in the test preset's environment, not here, so a
+      # developer running the same preset gets exactly what this job got.
+      - run: cmake --preset ${{ matrix.preset }}
+      - run: cmake --build --preset ${{ matrix.preset }}
+      - run: ctest --preset ${{ matrix.preset }}

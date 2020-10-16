@@ -1,0 +1,54 @@
+BasedOnStyle: Google
+IndentWidth: 2
+ColumnLimit: 80
+
+# Pointers and references bind to the type: `uint8_t* p`, `const Args& args`.
+#
+# Restated rather than inherited, because this is the one Google default that
+# recently changed meaning. Until LLVM 21 the Google style set
+# DerivePointerAlignment: true, which ignores PointerAlignment and instead
+# copies whichever spelling a file already uses -- so `uint8_t *p` was preserved
+# wherever it appeared, and `--check` passed on both spellings. LLVM 21 turned
+# it off to match the style guide, which now requires the space after the
+# asterisk.
+#
+# Which behaviour applies therefore depends on the clang-format major, and this
+# repo deliberately does not pin one (see the note in scripts/format.sh): CI
+# runs the distro's clang-format on ubuntu-latest while a macOS developer gets
+# Homebrew's, and the two are routinely several majors apart. Setting both
+# options makes the rule the same on either side of that gap.
+#
+# ReferenceAlignment: Pointer means "whatever PointerAlignment says", so the two
+# cannot drift apart.
+DerivePointerAlignment: false
+PointerAlignment: Left
+ReferenceAlignment: Pointer
+
+# Include order, exactly as the Google C++ Style Guide states it. Priority 0 is
+# clang-format's own slot for the related header -- format.h for format.cc -- so
+# the categories below start at 1:
+#
+#   0. the related header       (automatic)
+#   1. C system headers         <unistd.h>, <sys/stat.h>
+#   2. C++ standard library     <cstdint>, <string>
+#   3. other libraries          <openssl/evp.h>, <zlib.h>
+#   4. this project             "crypt/format.h"
+#
+# The C system headers are enumerated rather than matched as <name.h>, because
+# <zlib.h> is also <name.h>. Matching by shape would need the third-party rule
+# listed first to win -- clang-format takes the first matching regex -- which
+# leaves the list ordered by specificity while the priorities run in a different
+# order. Enumerating makes the rules disjoint, so list order and priority order
+# agree and neither has to be read against the other.
+IncludeBlocks: Regroup
+IncludeCategories:
+  - Regex:    '^<(assert|ctype|errno|fcntl|float|inttypes|limits|locale|math|setjmp|signal|stdarg|stddef|stdint|stdio|stdlib|string|termios|time|unistd|wchar|wctype)\.h>'
+    Priority: 1
+  - Regex:    '^<sys/[a-z_]+\.h>'
+    Priority: 1
+  - Regex:    '^<[a-z0-9_]+>'
+    Priority: 2
+  - Regex:    '^<.*>'
+    Priority: 3
+  - Regex:    '^".*"'
+    Priority: 4

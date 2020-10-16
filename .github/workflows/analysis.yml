@@ -1,0 +1,77 @@
+name: Analysis
+
+# Analysis that runs against the built binary rather than through the compiler.
+# Its own workflow so its longer timeouts and slower runs are not granted to
+# Build or Sanitizers, and so each reports as its own check.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: analysis-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CTEST_PARALLEL_LEVEL: 4
+
+jobs:
+  # Not redundant with ASan, for a specific reason: ASan sees only what it was
+  # compiled into, so OpenSSL and zlib are opaque to it. Every buffer handed to
+  # EVP_CipherUpdate or inflate() is sized by arithmetic in format.cc, and
+  # Valgrind checks those calls from outside. It also reports reads of
+  # uninitialized memory, which ASan does not.
+  valgrind:
+    name: Valgrind
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: scripts/install-deps.sh --no-style-tools
+
+      # The valgrind preset is uninstrumented on purpose: Valgrind and the
+      # sanitizers both replace the allocator and the combination reports
+      # nonsense. It has its own build tree, so an instrumented build cannot
+      # land here by accident, and check-valgrind.sh reads CMakeCache.txt to be
+      # sure before it starts.
+      #
+      # check-valgrind.sh runs 8 of the 11 suites and says which and why:
+      # Valgrind's ~30x slowdown turns Tamper and RoundTrip into tens of minutes.
+      - run: cmake --preset valgrind
+      - run: cmake --build --preset valgrind
+      - run: scripts/check-valgrind.sh --preset valgrind
+
+  # Reported, not gated on a number. A threshold gets gamed the moment it fails,
+  # and the useful question is not "is it above 85%" but "is anything important
+  # at zero" -- an untested error path in the chunk walk, a status code nothing
+  # returns. The per-file table answers that; a single percentage does not.
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # llvm stays behind --no-style-tools on Ubuntu, and llvm-profdata and
+      # llvm-cov are all this needs from it.
+      - run: scripts/install-deps.sh --no-style-tools
+
+      # `shell: bash` for pipefail: the default Linux shell is `bash -e`, under
+      # which a failing coverage.sh would be masked by tee succeeding.
+      - shell: bash
+        run: scripts/coverage.sh | tee coverage.txt
+
+      # On the run's summary page rather than buried in a log, since reading the
+      # table is the entire point of the job.
+      - name: Publish table
+        run: |
+          {
+            echo '### Coverage'
+            echo '```'
+            cat coverage.txt
+            echo '```'
+          } >> "${GITHUB_STEP_SUMMARY}"
